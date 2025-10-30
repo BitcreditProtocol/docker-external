@@ -58,10 +58,10 @@ services:
       "-rpcconnect=bitcoin",
       "-rpcport=18443",
       #"-rpccookiefile=/home/bitcoin/.bitcoin/regtest/.cookie",
-      "-rpcuser=${RPCUSER:-devnet}", 
+      "-rpcuser=${RPCUSER:-devnet}",
       "-rpcpassword=${RPCPASSWORD:-devnet}",
       "-rpcwait",
-      "generatetoaddress", 
+      "generatetoaddress",
       "101",
       "bcrt1q8ss37tslpvu3lce3g79zv89kmra57h9unxv2vt"
       ]
