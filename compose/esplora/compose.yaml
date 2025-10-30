@@ -1,0 +1,78 @@
+services:
+  bitcoin:
+    container_name: bitcoin
+    image: bitcoin/bitcoin:${BITCOIN_VERSION:-30.0}
+    restart: unless-stopped
+    volumes:
+      - ./chaindata/bitcoin:/home/bitcoin/.bitcoin
+    ports:
+      - "8332:8332"   # RPC
+      - "8333:8333"   # P2P
+    command:
+      - "-server=1"
+      - "-rpcbind=0.0.0.0:8332"
+      - "-rpcallowip=0.0.0.0/0"
+      - "-rpcuser=${RPCUSER:-mainnet}"
+      - "-rpcpassword=${RPCPASSWORD:-mainnet}"
+      - "-txindex=0" # not needed, electrs reads blk*.dat directly
+      - "-prune=0"
+      - "-fallbackfee=${FALLBACKFEE:-0.0002}"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8332 && echo > /dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  electrs:
+    container_name: electrs
+    image: ghcr.io/bitcreditprotocol/electrs-blockstream:${ELECTRS_VERSION:-0.1.0}
+    platform: linux/amd64
+    depends_on:
+      bitcoin:
+        condition: service_healthy
+    restart: unless-stopped
+    ports: ["3000:3000","50001:50001"]
+    ulimits: { nofile: { soft: 100000, hard: 100000 } }
+    volumes:
+      - ./chaindata/electrs:/data
+      - ./chaindata/bitcoin:/bitcoin:ro
+    command:
+      - --network=mainnet
+      - --db-dir=/data
+      - --daemon-dir=/bitcoin
+      - --daemon-rpc-addr=bitcoin:8332
+      - --cookie=${RPCUSER:-mainnet}:${RPCPASSWORD:-mainnet}
+      #- --cookie=/bitcoin/.cookie
+      - --electrum-rpc-addr=0.0.0.0:50001
+      - --http-addr=0.0.0.0:3000
+      - --electrum-txs-limit=1000000
+      - --utxos-limit=1000000
+      - --cors=*
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/blocks/tip/hash"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  esplora:
+    image: blockstream/esplora:${ESPLORA_VERSION:-latest}
+    container_name: esplora
+    depends_on:
+      - electrs
+    command:
+      - "/srv/explorer/run.sh"
+      - "bitcoin-mainnet"
+      - "explorer"
+    restart: unless-stopped
+
+  nginx:
+    container_name: nginx
+    image: nginx:${NGINX_VERSION:-alpine}
+    depends_on: [esplora, electrs]
+    ports:
+      - "80:80"
+    command: [ "nginx", "-g", "daemon off;" ]
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped
