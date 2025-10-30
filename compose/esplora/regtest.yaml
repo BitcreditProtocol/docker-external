@@ -1,0 +1,69 @@
+services:
+  bitcoin:
+    ports:
+      - "18443:18443"   # RPC
+      - "18444:18444"   # P2P
+    command:
+      - "-regtest=1"
+      - "-server=1"
+      - "-rpcbind=0.0.0.0:18443"
+      - "-rpcallowip=0.0.0.0/0"
+      - "-rpcuser=${RPCUSER:-devnet}"
+      - "-rpcpassword=${RPCPASSWORD:-devnet}"
+      - "-fallbackfee=${FALLBACKFEE:-0.0002}"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/18443 && echo > /dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  electrs:
+    command:
+      - -vvvv
+      - --timestamp
+      - --network=regtest
+      - --db-dir=/data
+      - --daemon-dir=/bitcoin
+      - --daemon-rpc-addr=bitcoin:18443
+      - --cookie=${RPCUSER:-devnet}:${RPCPASSWORD:-devnet}
+      #- --cookie=/bitcoin/regtest/.cookie
+      - --electrum-rpc-addr=0.0.0.0:50001
+      - --http-addr=0.0.0.0:3000
+      - --electrum-txs-limit=1000000
+      - --utxos-limit=1000000
+      - --cors=*
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/blocks/tip/hash"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  esplora:
+    command:
+      - "/srv/explorer/run.sh"
+      - "bitcoin-regtest"
+      - "explorer"
+
+  miner:
+    container_name: regtest-miner
+    image: bitcoin/bitcoin:${BITCOIN_VERSION:-30.0}
+    depends_on:
+      bitcoin:
+        condition: service_healthy
+    restart: "no"
+    command: [
+      "bitcoin-cli",
+      "-regtest",
+      "-rpcconnect=bitcoin",
+      "-rpcport=18443",
+      #"-rpccookiefile=/home/bitcoin/.bitcoin/regtest/.cookie",
+      "-rpcuser=${RPCUSER:-devnet}", 
+      "-rpcpassword=${RPCPASSWORD:-devnet}",
+      "-rpcwait",
+      "generatetoaddress", 
+      "101",
+      "bcrt1q8ss37tslpvu3lce3g79zv89kmra57h9unxv2vt"
+      ]
+    volumes:
+      - ./chaindata/bitcoin:/home/bitcoin/.bitcoin:ro
