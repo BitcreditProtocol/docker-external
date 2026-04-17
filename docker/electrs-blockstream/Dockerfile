@@ -1,5 +1,5 @@
 # ---- builder ----
-ARG RUST_VERSION=1.90.0
+ARG RUST_VERSION=1.92.0
 FROM rust:${RUST_VERSION}-trixie AS builder
 
 RUN apt-get update \
@@ -13,7 +13,7 @@ WORKDIR /src
 ARG REPO=https://github.com/blockstream/electrs.git
 #ARG REF=new-index
 # pin latest commit of branch new-index
-ARG REF=f1823d82b03dbd1dfef53f7b3611128dd2f4c1d2
+ARG REF=5b3ff8f7c150ebd9953b50a79b07bd8651d7fd94
 
 RUN git clone --filter=blob:none "${REPO}" . \
  && git fetch origin "${REF}" \
