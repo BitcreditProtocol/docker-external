@@ -8,7 +8,7 @@ RUN apt-get update \
 
 WORKDIR /src
 ARG REPO=https://github.com/Blockstream/esplora.git
-ARG REF=master
+ARG REF=f52e2e1b7b772c0f57a56135c85d75afac17412c # master 20260416
 ARG FLAVORS="bitcoin-mainnet bitcoin-testnet bitcoin-testnet4 bitcoin-signet bitcoin-regtest"
 
 RUN git clone --filter=blob:none "${REPO}" . \

@@ -1,7 +1,7 @@
 services:
   bitcoin:
     container_name: bitcoin
-    image: bitcoin/bitcoin:${BITCOIN_VERSION:-latest}
+    image: bitcoin/bitcoin:${BITCOIN_VERSION:-30.2}
     restart: unless-stopped
     volumes:
       - ./chaindata/bitcoin:/home/bitcoin/.bitcoin
@@ -25,7 +25,7 @@ services:
 
   electrs:
     container_name: electrs
-    image: ghcr.io/bitcreditprotocol/electrs-blockstream:${ELECTRS_VERSION:-latest}
+    image: ghcr.io/bitcreditprotocol/electrs-blockstream:${ELECTRS_VERSION:-0.1.1}
     platform: linux/amd64
     depends_on:
       bitcoin:
@@ -57,7 +57,7 @@ services:
 
   esplora:
     container_name: esplora
-    image: ghcr.io/bitcreditprotocol/esplora-frontend:${ESPLORA_FRONTEND_VERSION:-latest}
+    image: ghcr.io/bitcreditprotocol/esplora-frontend:${ESPLORA_FRONTEND_VERSION:-0.1.0}
     restart: unless-stopped
     environment:
       ESPLORA_FLAVOR: ${ESPLORA_FLAVOR:-bitcoin-mainnet}
