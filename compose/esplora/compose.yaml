@@ -1,7 +1,7 @@
 services:
   bitcoin:
     container_name: bitcoin
-    image: bitcoin/bitcoin:${BITCOIN_VERSION:-30.0}
+    image: bitcoin/bitcoin:${BITCOIN_VERSION:-latest}
     restart: unless-stopped
     volumes:
       - ./chaindata/bitcoin:/home/bitcoin/.bitcoin
@@ -25,7 +25,7 @@ services:
 
   electrs:
     container_name: electrs
-    image: ghcr.io/bitcreditprotocol/electrs-blockstream:${ELECTRS_VERSION:-0.1.0}
+    image: ghcr.io/bitcreditprotocol/electrs-blockstream:${ELECTRS_VERSION:-latest}
     platform: linux/amd64
     depends_on:
       bitcoin:
@@ -56,23 +56,17 @@ services:
       start_period: 60s
 
   esplora:
-    image: blockstream/esplora:${ESPLORA_VERSION:-latest}
     container_name: esplora
-    depends_on:
-      - electrs
-    command:
-      - "/srv/explorer/run.sh"
-      - "bitcoin-mainnet"
-      - "explorer"
+    image: ghcr.io/bitcreditprotocol/esplora-frontend:${ESPLORA_FRONTEND_VERSION:-latest}
     restart: unless-stopped
-
-  nginx:
-    container_name: nginx
-    image: nginx:${NGINX_VERSION:-alpine}
-    depends_on: [esplora, electrs]
+    environment:
+      ESPLORA_FLAVOR: ${ESPLORA_FLAVOR:-bitcoin-mainnet}
+      ELECTRS_HTTP_URL: ${ELECTRS_HTTP_URL:-http://electrs:3000}
     ports:
       - "80:80"
-    command: [ "nginx", "-g", "daemon off;" ]
-    volumes:
-      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/healthz | grep -q ok"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
