@@ -25,7 +25,7 @@ RUN npm install \
 FROM nginx:1.28-alpine
 
 COPY --from=builder /out /srv/esplora/static
-COPY docker/esplora-frontend/docker-entrypoint.sh /usr/local/bin/esplora-frontend-entrypoint
+COPY docker-entrypoint.sh /usr/local/bin/esplora-frontend-entrypoint
 
 RUN chmod +x /usr/local/bin/esplora-frontend-entrypoint
 
