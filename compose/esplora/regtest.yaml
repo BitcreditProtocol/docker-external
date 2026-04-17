@@ -40,10 +40,8 @@ services:
       start_period: 60s
 
   esplora:
-    command:
-      - "/srv/explorer/run.sh"
-      - "bitcoin-regtest"
-      - "explorer"
+    environment:
+      ESPLORA_FLAVOR: bitcoin-regtest
 
   miner:
     container_name: regtest-miner

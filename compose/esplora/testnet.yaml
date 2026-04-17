@@ -40,7 +40,5 @@ services:
       start_period: 60s
 
   esplora:
-    command:
-      - "/srv/explorer/run.sh"
-      - "bitcoin-testnet"
-      - "explorer"
+    environment:
+      ESPLORA_FLAVOR: bitcoin-testnet
