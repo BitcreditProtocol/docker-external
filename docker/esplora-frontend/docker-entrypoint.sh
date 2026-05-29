@@ -141,6 +141,10 @@ server {
         return 200 'ok';
     }
 
+    location = /favicon.ico {
+        return 302 ${ESPLORA_BASE_HREF}img/favicon.png;
+    }
+
 ${ROOT_REDIRECT_BLOCK}
     location ^~ ${API_PREFIX} {
         proxy_pass ${ELECTRS_HTTP_URL}/;
