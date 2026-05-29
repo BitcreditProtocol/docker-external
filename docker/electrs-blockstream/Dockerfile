@@ -13,7 +13,7 @@ WORKDIR /src
 ARG REPO=https://github.com/blockstream/electrs.git
 #ARG REF=new-index
 # pin latest commit of branch new-index
-ARG REF=5b3ff8f7c150ebd9953b50a79b07bd8651d7fd94
+ARG REF=503b740cce2133fd07f451cbe93249a4e092b300
 
 RUN git clone --filter=blob:none "${REPO}" . \
  && git fetch origin "${REF}" \
