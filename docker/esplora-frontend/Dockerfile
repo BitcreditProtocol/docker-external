@@ -1,5 +1,5 @@
 # ---- builder ----
-ARG NODE_VERSION=20-bookworm-slim
+ARG NODE_VERSION=24-trixie-slim
 FROM node:${NODE_VERSION} AS builder
 
 RUN apt-get update \
@@ -8,7 +8,7 @@ RUN apt-get update \
 
 WORKDIR /src
 ARG REPO=https://github.com/Blockstream/esplora.git
-ARG REF=f52e2e1b7b772c0f57a56135c85d75afac17412c # master 20260416
+ARG REF=393af736194fc71f63dc9993dab10b2936c2ec15 # master 20260515
 ARG FLAVORS="bitcoin-mainnet bitcoin-testnet bitcoin-testnet4 bitcoin-signet bitcoin-regtest"
 
 RUN git clone --filter=blob:none "${REPO}" . \
@@ -22,7 +22,7 @@ RUN npm install \
     done
 
 # ---- runtime ----
-FROM nginx:1.28-alpine
+FROM nginx:1.30.2-alpine
 
 COPY --from=builder /out /srv/esplora/static
 COPY docker-entrypoint.sh /usr/local/bin/esplora-frontend-entrypoint
