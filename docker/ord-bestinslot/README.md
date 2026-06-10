@@ -33,6 +33,8 @@ Compose notes from `ord --help`:
 - Use `--data-dir` for persistent ord index data.
 - Prefer the documented `--data-dir` spelling; some ord examples use
   `--datadir`, but this build documents `--data-dir`.
+- The runtime container runs as the unprivileged `ord` user with `/data` as its
+  working directory; mount persistent Compose data under `/data/ord`.
 - Use `--bitcoin-rpc-url`, `--bitcoin-rpc-username`, and
   `--bitcoin-rpc-password` for Bitcoin Core RPC credentials, or use
   `--cookie-file` instead when sharing the Bitcoin Core cookie.
