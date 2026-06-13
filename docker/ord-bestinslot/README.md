@@ -64,4 +64,15 @@ environment:
   DB_READER_API_URL: 0.0.0.0:11030
 volumes:
   - ord-data:/data/ord
+healthcheck:
+  test:
+    - CMD-SHELL
+    - >-
+      curl -fsS -H 'content-type: application/json'
+      --data '{"jsonrpc":"2.0","id":1,"method":"getLatestBlockHeight","params":[]}'
+      http://127.0.0.1:11030 | grep -q '"result"'
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 120s
 ```
