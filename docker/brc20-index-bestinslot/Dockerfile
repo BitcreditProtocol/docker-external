@@ -31,5 +31,5 @@ RUN useradd -r -d /var/lib/brc20index -s /usr/sbin/nologin brc20index \
 COPY --from=builder /src/target/release/brc20-index /usr/local/bin/brc20-index
 
 USER brc20index
-VOLUME ["/data"]
+WORKDIR /data
 ENTRYPOINT ["/usr/local/bin/brc20-index"]
