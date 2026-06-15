@@ -1,0 +1,57 @@
+services:
+  bitcoin:
+    command:
+      - "-server=1"
+      - "-rpcbind=0.0.0.0:8332"
+      - "-rpcallowip=0.0.0.0/0"
+      - "-rpcuser=${RPCUSER:-mainnet}"
+      - "-rpcpassword=${RPCPASSWORD:-mainnet}"
+      - "-txindex=1"
+      - "-prune=0"
+      - "-fallbackfee=${FALLBACKFEE:-0.0002}"
+    container_name: bitcoin
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8332 && echo > /dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    image: bitcoin/bitcoin:${BITCOIN_VERSION:-30.2}
+    restart: unless-stopped
+    volumes:
+      - ./chaindata/bitcoin:/home/bitcoin/.bitcoin
+
+  ord:
+    command: [
+       "--bitcoin-rpc-url", "bitcoin:8332",
+       "--bitcoin-rpc-username", "${RPCUSER:-mainnet}",
+       "--bitcoin-rpc-password=${RPCPASSWORD:-mainnet}",
+       "--chain", "mainnet",
+       "--data-dir", "/data",
+       "index", "run",
+      ]
+    depends_on:
+      bitcoin:
+        condition: service_healthy
+    image: ghcr.io/bitcreditprotocol/ord-bestinslot:${ORD_VERSION:-0.1.0}
+    restart: always
+    user: "${UID}:${GID}"
+    volumes:
+      - ./orddata:/data
+      - ./chaindata/bitcoin:/var/lib/bitcoin/data:ro
+
+  db:
+    environment:
+      POSTGRES_PASSWORD: example
+    image: postgres:18-trixie
+    restart: always
+    volumes:
+      - ./dbdata:/var/lib/postgresql
+
+  brc20index:
+    command: ["--log-level", "info"]
+    depends_on:
+      - db
+      - ord
+    image: ghcr.io/bitcreditprotocol/brc20-index-bestinslot:${BRC20INDEX_VERSION:-2.0.10}
+    volumes:
+      - ./dotenv:/data/.env
