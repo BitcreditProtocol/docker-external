@@ -1,5 +1,4 @@
 # Full-prog local testing requires a synced mainnet Bitcoin Core RPC.
 # Do not use an unsynced local node here; brc20-prog needs chain data through
 # the brc20-index Bitcoin RPC proxy.
-#BTC_RPC_URL=http://rpcuser:rpcpassword@bitcoin-node-host:8332
-BTC_RPC_URL=https://bitcoin-rpc.publicnode.com
+BTC_RPC_URL=http://rpcuser:rpcpassword@bitcoin-node-host:8332
