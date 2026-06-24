@@ -1,58 +1,4 @@
 services:
-  bitcoin:
-    container_name: bitcoin-mainnet
-    image: bitcoin/bitcoin:${BITCOIN_VERSION:-30.2}
-    restart: unless-stopped
-    command:
-      - "-server=1"
-      - "-rpcbind=0.0.0.0:8332"
-      - "-rpcallowip=0.0.0.0/0"
-      - "-rpcuser=${BTC_RPC_USER:?set BTC_RPC_USER}"
-      - "-rpcpassword=${BTC_RPC_PASSWORD:?set BTC_RPC_PASSWORD}"
-      - "-txindex=1"
-      - "-prune=0"
-      - "-fallbackfee=${FALLBACKFEE:-0.0002}"
-    environment:
-      BTC_RPC_USER: ${BTC_RPC_USER:?set BTC_RPC_USER}
-      BTC_RPC_PASSWORD: ${BTC_RPC_PASSWORD:?set BTC_RPC_PASSWORD}
-    healthcheck:
-      test: ["CMD-SHELL", "bitcoin-cli -rpcconnect=127.0.0.1 -rpcport=8332 -rpcuser=\"$${BTC_RPC_USER}\" -rpcpassword=\"$${BTC_RPC_PASSWORD}\" getblockchaininfo >/dev/null"]
-      interval: 30s
-      timeout: 10s
-      retries: 20
-      start_period: 30s
-    expose:
-      - "8332"
-    volumes:
-      - /var/lib/brc20-bestinslot/bitcoin:/home/bitcoin/.bitcoin
-
-  ord-bestinslot:
-    container_name: ord-bestinslot
-    image: ghcr.io/bitcreditprotocol/ord-bestinslot:${ORD_VERSION:?set ORD_VERSION}
-    platform: linux/amd64
-    restart: unless-stopped
-    depends_on:
-      bitcoin:
-        condition: service_healthy
-    command:
-      - --data-dir
-      - /data/ord
-      - --chain=mainnet
-      - --bitcoin-rpc-url
-      - bitcoin:8332
-      - --bitcoin-rpc-username
-      - ${BTC_RPC_USER:?set BTC_RPC_USER}
-      - --bitcoin-rpc-password
-      - ${BTC_RPC_PASSWORD:?set BTC_RPC_PASSWORD}
-      - index
-      - update
-    environment:
-      DB_READER_API_URL: 0.0.0.0:11030
-    expose:
-      - "11030"
-    volumes:
-      - /var/lib/brc20-bestinslot/ord:/data/ord
-
   brc20-db:
     container_name: brc20-bestinslot-db
     image: postgres:16
@@ -95,15 +41,13 @@ services:
     platform: linux/amd64
     restart: unless-stopped
     depends_on:
-      ord-bestinslot:
-        condition: service_started
       brc20-db:
         condition: service_healthy
       brc20-prog:
         condition: service_started
     environment:
       OPERATION_MODE: full
-      OPI_DB_URL: http://ord-bestinslot:11030
+      OPI_DB_URL: ${OPI_DB_URL:?set OPI_DB_URL}
       NETWORK_TYPE: mainnet
       DB_HOST: brc20-db
       DB_PORT: "5432"
@@ -120,7 +64,7 @@ services:
       BITCOIN_RPC_CACHE_ENABLED: "true"
       BITCOIN_RPC_PROXY_SERVER_ENABLED: "true"
       BITCOIN_RPC_PROXY_SERVER_ADDR: 0.0.0.0:18547
-      BITCOIN_RPC_URL: http://${BTC_RPC_USER:?set BTC_RPC_USER}:${BTC_RPC_PASSWORD:?set BTC_RPC_PASSWORD}@bitcoin:8332
+      BITCOIN_RPC_URL: ${BTC_RPC_URL:?set BTC_RPC_URL}
       BRC20_PROG_BALANCE_SERVER_ADDR: 0.0.0.0:18546
       STARTUP_WAIT_SECONDS: "10"
     expose:

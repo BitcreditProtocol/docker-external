@@ -1,0 +1,20 @@
+BRC20_INDEX_VERSION=2.0.10
+BRC20_INDEX_NOPROG_VERSION=2.0.10-noprog
+BRC20_API_VERSION=2.0.10
+BRC20_PROG_VERSION=v0.15.13
+
+BRC20_DB_USER=postgres
+BRC20_DB_PASSWD=verysewcretpassword
+BRC20_DB_DATABASE=postgres
+
+BRC20_PROG_RPC_USER=user
+BRC20_PROG_RPC_PASSWORD=password
+
+# Existing ord DB reader reachable from Docker.
+# On Docker Desktop/OrbStack, host.docker.internal points to the host machine.
+# Replace with a LAN/VPN address when ord is not on the Docker host.
+OPI_DB_URL=http://100.76.159.65:11030
+
+BRC20_API_TRUSTED_PROXY_CNT=0
+BRC20_API_BIND=127.0.0.1
+BRC20_API_PORT=18000
