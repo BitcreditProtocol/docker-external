@@ -28,6 +28,8 @@ BRC20_PROG_RPC_USER=<strong-user>
 BRC20_PROG_RPC_PASSWORD=<strong-secret>
 ```
 
+`BRC20_PROG_VERSION` is the Docker image tag without a leading `v`; `BRC20_PROG_REF` is the upstream Git tag and keeps the leading `v`.
+
 ## Local Tests
 
 Local no-prog patch image build/test compose without BRC20 prog or Bitcoin RPC:

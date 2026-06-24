@@ -19,12 +19,12 @@ services:
 
   brc20-prog:
     container_name: brc20-prog-local
-    image: brc20-prog-bestinslot:${BRC20_PROG_VERSION:-v0.15.13}
+    image: brc20-prog-bestinslot:${BRC20_PROG_VERSION:-0.15.13}
     platform: linux/amd64
     build:
       context: ../../docker/brc20-prog-bestinslot
       args:
-        REF: ${BRC20_PROG_VERSION:-v0.15.13}
+        REF: ${BRC20_PROG_REF:-v0.15.13}
     restart: unless-stopped
     environment:
       BRC20_PROG_RPC_SERVER_URL: 0.0.0.0:18545
