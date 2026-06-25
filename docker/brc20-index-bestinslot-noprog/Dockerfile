@@ -3,7 +3,7 @@ ARG RUST_VERSION=1.96.0
 FROM rust:${RUST_VERSION}-trixie AS builder
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends build-essential libssl-dev ca-certificates clang pkg-config git python3 \
+ && apt-get install -y --no-install-recommends build-essential libssl-dev ca-certificates clang pkg-config git \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -14,8 +14,9 @@ RUN git clone "${REPO}" . \
  && git fetch origin "${REF}" \
  && git checkout "${REF}"
 
-COPY patches/disable-startup-prog-height.py /tmp/disable-startup-prog-height.py
-RUN python3 /tmp/disable-startup-prog-height.py
+COPY patches/disable-startup-prog-height.patch /tmp/disable-startup-prog-height.patch
+RUN git apply --check /tmp/disable-startup-prog-height.patch \
+ && git apply /tmp/disable-startup-prog-height.patch
 
 RUN cargo build --locked --release --manifest-path modules/brc20_index/Cargo.toml --target-dir /src/target
 
