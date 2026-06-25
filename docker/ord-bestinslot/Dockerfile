@@ -29,18 +29,28 @@ RUN cargo build --locked --bin ord --release
 # ---- runtime ----
 FROM debian:bookworm-slim
 
+ARG ORD_UID=10001
+ARG ORD_GID=10001
+
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates \
+      curl \
       libssl3 \
  && rm -rf /var/lib/apt/lists/* \
- && useradd -r -d /data -s /usr/sbin/nologin ord \
+ && groupadd --system --gid "${ORD_GID}" ord \
+ && useradd --system \
+      --uid "${ORD_UID}" \
+      --gid "${ORD_GID}" \
+      --home-dir /data \
+      --shell /usr/sbin/nologin \
+      ord \
  && mkdir -p /data/ord \
- && chown -R ord:ord /data
+ && chown -R "${ORD_UID}:${ORD_GID}" /data
 
 COPY --from=builder /usr/src/OPI/ord/target/release/ord /usr/local/bin/ord
 
-USER ord
+USER ${ORD_UID}:${ORD_GID}
 WORKDIR /data
 
 ENV RUST_BACKTRACE=1
