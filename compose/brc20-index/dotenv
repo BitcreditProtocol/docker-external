@@ -1,27 +1,28 @@
-DB_USER="postgres"
-DB_HOST="db"
-DB_PORT="5432"
-DB_DATABASE="postgres"
-DB_PASSWD="example"
-DB_SSL="false"
+BITCOIN_VERSION=30.2
+ORD_VERSION=0.1.0
 
-OPI_DB_URL="http://localhost:11030"
+BRC20_INDEX_VERSION=2.0.10
+BRC20_API_VERSION=2.0.10
+BRC20_PROG_VERSION=0.15.13
+BRC20_PROG_REF=v0.15.13
 
-NETWORK_TYPE="mainnet"
-OPERATION_MODE="full"
+BRC20_DB_USER=postgres
+BRC20_DB_PASSWD=change-me
+BRC20_DB_DATABASE=postgres
 
-## reporting system settings
-REPORT_TO_INDEXER="true"
-REPORT_URL="https://api.opi.network/report_block"
-REPORT_RETRIES="10"
-# set a name for report dashboard
-REPORT_NAME="opi_brc20_index_rs"
+BRC20_PROG_RPC_USER=change-me
+BRC20_PROG_RPC_PASSWORD=change-me
 
-# BRC20 programmable module settings
-BRC20_PROG_ENABLED="false"
-BRC20_PROG_RPC_URL="http://127.0.0.1:18545"
-BRC20_PROG_RPC_USER="user"
-BRC20_PROG_RPC_PASSWORD="password"
+# Bitcoin Core RPC credentials used by compose.yaml.
+BTC_RPC_USER=rpcuser
+BTC_RPC_PASSWORD=rpcpassword
 
-# Bitcoin RPC proxy for BRC20 programmable module
-BITCOIN_RPC_URL="http://bitcoin:18332"
+# Authenticated external Bitcoin Core mainnet RPC used by compose.external-ord.yaml.
+BTC_RPC_URL=http://rpcuser:rpcpassword@bitcoin-node-host:8332
+
+# Existing BestInSlot ord DB reader used by compose.external-ord.yaml.
+OPI_DB_URL=http://ord-host:11030
+
+BRC20_API_BIND=127.0.0.1
+BRC20_API_PORT=8000
+BRC20_API_TRUSTED_PROXY_CNT=1

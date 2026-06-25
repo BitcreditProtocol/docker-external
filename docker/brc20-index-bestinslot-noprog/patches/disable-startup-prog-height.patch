@@ -1,0 +1,16 @@
+diff --git a/modules/brc20_index/src/indexer/brc20_indexer.rs b/modules/brc20_index/src/indexer/brc20_indexer.rs
+--- a/modules/brc20_index/src/indexer/brc20_indexer.rs
++++ b/modules/brc20_index/src/indexer/brc20_indexer.rs
+@@ -91,6 +91,8 @@ impl Brc20Indexer {
+-        tracing::info!(
+-            "Prog Block Height: {}",
+-            parse_hex_number(&self.brc20_prog_client.eth_block_number().await?)?
+-        );
++        if self.config.brc20_prog_enabled {
++            tracing::info!(
++                "Prog Block Height: {}",
++                parse_hex_number(&self.brc20_prog_client.eth_block_number().await?)?
++            );
++        }
+ 
+         self.reorg_to_last_synced_block_height().await?; // Ensure no residue before proceeding

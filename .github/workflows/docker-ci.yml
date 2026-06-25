@@ -132,6 +132,7 @@ jobs:
             type=raw,value=sha-${{ github.sha }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
             type=raw,value=${{ steps.version.outputs.value }},enable=${{ github.ref == 'refs/heads/master' && steps.version.outputs.value != '' }}
+            type=raw,value=${{ steps.version.outputs.value }}-${{ github.sha }},enable=${{ github.ref == 'refs/heads/master' && steps.version.outputs.value != '' }}
 
       - name: build and push
         id: build_push

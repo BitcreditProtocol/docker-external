@@ -1,0 +1,77 @@
+services:
+  brc20-db:
+    image: postgres:16
+    container_name: brc20-bestinslot-db-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${BRC20_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${BRC20_DB_PASSWD:-verysewcretpassword}
+      POSTGRES_DB: ${BRC20_DB_DATABASE:-postgres}
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - brc20_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  brc20-index-bestinslot:
+    container_name: brc20-index-bestinslot-local
+    image: brc20-index-bestinslot-noprog:${BRC20_INDEX_NOPROG_VERSION:-2.0.10-noprog}
+    platform: linux/amd64
+    build:
+      context: ../../docker/brc20-index-bestinslot-noprog
+      args:
+        REF: v${BRC20_INDEX_VERSION:-2.0.10}
+    restart: "no"
+    depends_on:
+      brc20-db:
+        condition: service_healthy
+    environment:
+      OPERATION_MODE: full
+      OPI_DB_URL: ${OPI_DB_URL:-http://host.docker.internal:11030}
+      NETWORK_TYPE: mainnet
+      DB_HOST: brc20-db
+      DB_PORT: "5432"
+      DB_USER: ${BRC20_DB_USER:-postgres}
+      DB_PASSWD: ${BRC20_DB_PASSWD:-verysewcretpassword}
+      DB_DATABASE: ${BRC20_DB_DATABASE:-postgres}
+      DB_SSL: "false"
+      REPORT_TO_INDEXER: "false"
+      SAVE_LOGS: "false"
+      STARTUP_WAIT_SECONDS: "3"
+    command: ["-l", "info"]
+
+  brc20-api-bestinslot:
+    container_name: brc20-api-bestinslot-local
+    image: brc20-api-bestinslot:${BRC20_API_VERSION:-2.0.10}
+    platform: linux/amd64
+    build:
+      context: ../../docker/brc20-api-bestinslot
+      args:
+        REF: v${BRC20_API_VERSION:-2.0.10}
+    restart: unless-stopped
+    depends_on:
+      brc20-db:
+        condition: service_healthy
+    environment:
+      DB_HOST: brc20-db
+      DB_PORT: "5432"
+      DB_USER: ${BRC20_DB_USER:-postgres}
+      DB_PASSWD: ${BRC20_DB_PASSWD:-verysewcretpassword}
+      DB_DATABASE: ${BRC20_DB_DATABASE:-postgres}
+      DB_SSL: "false"
+      DB_MAX_CONNECTIONS: "10"
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+      API_TRUSTED_PROXY_CNT: ${BRC20_API_TRUSTED_PROXY_CNT:-0}
+      RATE_LIMIT_ENABLE: "true"
+      RATE_LIMIT_WINDOW_MS: "1000"
+      RATE_LIMIT_MAX: "100"
+    ports:
+      - "${BRC20_API_BIND:-127.0.0.1}:${BRC20_API_PORT:-18000}:8000"
+
+volumes:
+  brc20_db_data:
