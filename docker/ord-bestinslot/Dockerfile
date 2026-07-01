@@ -30,9 +30,7 @@ RUN cargo build --locked --bin ord --release
 FROM debian:bookworm-slim
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      ca-certificates \
-      libssl3 \
+ && apt-get install -y --no-install-recommends ca-certificates libssl3 curl \
  && rm -rf /var/lib/apt/lists/* \
  && useradd -r -d /data -s /usr/sbin/nologin ord \
  && mkdir -p /data/ord \
