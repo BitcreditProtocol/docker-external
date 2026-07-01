@@ -19,7 +19,7 @@ RUN cargo install --locked \
 FROM debian:bookworm-slim
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates libssl3 \
+ && apt-get install -y --no-install-recommends ca-certificates libssl3 curl \
  && rm -rf /var/lib/apt/lists/* \
  && useradd -r -d /var/lib/brc20-prog -s /usr/sbin/nologin brc20prog \
  && mkdir -p /var/lib/brc20-prog/data \
