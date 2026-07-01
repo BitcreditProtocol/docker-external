@@ -24,9 +24,18 @@ For `compose.external-ord.yaml`, set:
 OPI_DB_URL=http://<existing-synced-ord-db-reader-host>:11030
 BTC_RPC_URL=http://<rpcuser>:<rpcpassword>@<synced-bitcoin-core-host>:8332
 BRC20_DB_PASSWD=<strong-secret>
-BRC20_PROG_RPC_USER=<strong-user>
-BRC20_PROG_RPC_PASSWORD=<strong-secret>
+BTC_RPC_USER=<rpcuser>
+BTC_RPC_PASSWORD=<rpcpassword>
 ```
+
+The full-prog examples currently disable `brc20-prog` JSON-RPC auth and Bitcoin RPC response caching:
+
+```env
+BRC20_PROG_RPC_SERVER_ENABLE_AUTH=false
+BITCOIN_RPC_CACHE_ENABLED=false
+```
+
+This matches the validated production workaround for OPI `v2.0.10` and `brc20-prog` `v0.15.13`: the index proxy forwards inbound `Authorization` headers to Bitcoin Core, so `brc20-prog` is given the Bitcoin RPC credentials while it calls the index proxy. Re-enable separate `brc20-prog` RPC auth only after the proxy strips or replaces inbound `Authorization` headers.
 
 `BRC20_PROG_VERSION` is the Docker image tag without a leading `v`; `BRC20_PROG_REF` is the upstream Git tag and keeps the leading `v`.
 
