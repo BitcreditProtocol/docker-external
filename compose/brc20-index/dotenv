@@ -10,9 +10,6 @@ BRC20_DB_USER=postgres
 BRC20_DB_PASSWD=change-me
 BRC20_DB_DATABASE=postgres
 
-BRC20_PROG_RPC_USER=change-me
-BRC20_PROG_RPC_PASSWORD=change-me
-
 # Bitcoin Core RPC credentials used by compose.yaml.
 BTC_RPC_USER=rpcuser
 BTC_RPC_PASSWORD=rpcpassword

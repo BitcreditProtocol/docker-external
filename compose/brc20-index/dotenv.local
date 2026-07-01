@@ -8,9 +8,6 @@ BRC20_DB_USER=postgres
 BRC20_DB_PASSWD=verysewcretpassword
 BRC20_DB_DATABASE=postgres
 
-BRC20_PROG_RPC_USER=user
-BRC20_PROG_RPC_PASSWORD=password
-
 # Existing ord DB reader reachable from Docker.
 # On Docker Desktop/OrbStack, host.docker.internal points to the host machine.
 # Replace with a LAN/VPN address when ord is not on the Docker host.
