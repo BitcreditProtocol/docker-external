@@ -1,0 +1,774 @@
+diff --git a/ord/src/index.rs b/ord/src/index.rs
+index 3f9e7ce..c2e0bce 100644
+--- a/ord/src/index.rs
++++ b/ord/src/index.rs
+@@ -133,6 +133,7 @@ pub struct Index {
+   write_options: rocksdb::WriteOptions,
+   pub(crate) path: PathBuf,
+   _runtime: Runtime,
++  _recovery_lock: DB,
+ }
+ 
+ impl Index {
+@@ -148,6 +149,9 @@ impl Index {
+ 
+     let path = settings.index().to_owned();
+ 
++    // Repair an interrupted directory swap before RocksDB can create an empty index.
++    let recovery_lock = Reorg::prepare_index(&path)?;
++
+     let data_dir = path.parent().unwrap();
+ 
+     fs::create_dir_all(data_dir).snafu_context(error::Io { path: data_dir })?;
+@@ -275,6 +279,7 @@ impl Index {
+       path,
+       write_options,
+       _runtime: runtime,
++      _recovery_lock: recovery_lock,
+     })
+   }
+ 
+diff --git a/ord/src/index/reorg.rs b/ord/src/index/reorg.rs
+index c74e48a..5849179 100644
+--- a/ord/src/index/reorg.rs
++++ b/ord/src/index/reorg.rs
+@@ -1,5 +1,7 @@
+ use {super::*, updater::BlockData};
+ 
++mod backups;
++
+ #[derive(Debug, PartialEq)]
+ pub(crate) enum Error {
+   Recoverable { height: u32, depth: u32 },
+@@ -82,32 +84,21 @@ impl Reorg {
+     Ok(result)
+   }
+ 
+-  pub(crate) fn handle_reorg(path: &PathBuf, height: u32, depth: u32) -> Result {
++  pub(crate) fn handle_reorg(path: &Path, client: &Client, height: u32, depth: u32) -> Result {
+     println!("rolling back database after reorg of depth {depth} at height {height}");
++    backups::restore(path, |height| {
++      match client.get_block_hash(u64::from(height)) {
++        Ok(hash) => Ok(Some(hash)),
++        Err(bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::error::Error::Rpc(
++          bitcoincore_rpc::jsonrpc::error::RpcError { code: -8, .. },
++        ))) => Ok(None),
++        Err(err) => Err(err.into()),
++      }
++    })
++  }
+ 
+-    let backup_opts = BackupEngineOptions::new(&path.join("backup"))?;
+-    let mut backup_engine = BackupEngine::open(&backup_opts, &rocksdb::Env::new()?)?;
+-
+-    let backups = backup_engine.get_backup_info();
+-    // get the oldest backup
+-    let oldest_backup = backups
+-      .iter()
+-      .min_by_key(|backup| backup.backup_id)
+-      .ok_or_else(|| anyhow!("No backups found"))?;
+-    let backup_id = oldest_backup.backup_id;
+-
+-    println!("restoring backup with id {}", backup_id);
+-    let db_dir = path.join("index.db");
+-    let wal_dir = path.join("index.db");
+-    let opts = rocksdb::backup::RestoreOptions::default();
+-
+-    backup_engine.restore_from_backup(db_dir, wal_dir, &opts, backup_id)?;
+-
+-    println!(
+-      "successfully rolled back database"
+-    );
+-
+-    Ok(())
++  pub(crate) fn prepare_index(path: &Path) -> Result<DB> {
++    backups::prepare_index(path)
+   }
+ 
+   pub(crate) fn update_savepoints(index: &Index, height: u32) -> Result {
+@@ -115,11 +106,13 @@ impl Reorg {
+       let backup_opts = BackupEngineOptions::new(&index.path.join("backup"))?;
+       let mut backup_engine = BackupEngine::open(&backup_opts, &rocksdb::Env::new()?)?;
+ 
+-      backup_engine.purge_old_backups(index.settings.max_savepoints() - 1)?;
+-
+       println!("Creating savepoint at height {}", height);
+ 
+-      backup_engine.create_new_backup(&index.db)?;
++      // WAL is disabled on this index, so all column families must be flushed.
++      backup_engine.create_new_backup_flush(&index.db, true)?;
++      backups::remember_new_backup(&index.path, &backup_engine, &index.db)?;
++      backup_engine.purge_old_backups(index.settings.max_savepoints())?;
++      backups::prune_hints(&index.path, &backup_engine)?;
+ 
+       println!("Savepoint created successfully");
+ 
+diff --git a/ord/src/index/reorg/backups.rs b/ord/src/index/reorg/backups.rs
+new file mode 100644
+index 0000000..6a9371b
+--- /dev/null
++++ b/ord/src/index/reorg/backups.rs
+@@ -0,0 +1,644 @@
++use super::*;
++
++const STAGING: &str = "index.db.reorg-restore";
++const PREVIOUS: &str = "index.db.reorg-previous";
++const HINTS: &str = "checkpoint-tips.json";
++
++#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
++struct Tip {
++  height: u32,
++  hash: BlockHash,
++}
++
++#[derive(Deserialize, Serialize)]
++struct Hint {
++  // Bind the hint to the immutable RocksDB backup manifest, not just its ID.
++  manifest_hash: String,
++  tip: Option<Tip>,
++}
++
++type Hints = BTreeMap<u32, Hint>;
++
++fn read_hints(path: &Path) -> Result<Hints> {
++  let file = path.join("backup").join(HINTS);
++  match fs::read(&file) {
++    Ok(bytes) => match serde_json::from_slice(&bytes) {
++      Ok(hints) => Ok(hints),
++      Err(err) => {
++        log::warn!(
++          "Ignoring malformed checkpoint hints at {}: {err}",
++          file.display()
++        );
++        Ok(Hints::new())
++      }
++    },
++    Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Hints::new()),
++    Err(err) => Err(err.into()),
++  }
++}
++
++fn write_hints(path: &Path, hints: &Hints) -> Result {
++  let directory = path.join("backup");
++  let mut file = tempfile::NamedTempFile::new_in(&directory)?;
++  serde_json::to_writer(file.as_file_mut(), hints)?;
++  file.as_file().sync_all()?;
++  file.persist(directory.join(HINTS))?;
++  File::open(directory)?.sync_all()?;
++  Ok(())
++}
++
++fn manifest_hash(path: &Path, id: u32) -> Result<String> {
++  Ok(
++    bitcoin::hashes::sha256::Hash::hash(&fs::read(
++      path.join("backup").join("meta").join(id.to_string()),
++    )?)
++    .to_string(),
++  )
++}
++
++fn tip(db: &DB) -> Result<Option<Tip>> {
++  let cf = db
++    .cf_handle("height_to_block_header")
++    .ok_or_else(|| anyhow!("Missing checkpoint column family height_to_block_header"))?;
++  db.iterator_cf(cf, IteratorMode::End)
++    .next()
++    .transpose()?
++    .map(|(height, header)| {
++      Ok(Tip {
++        height: u32::from_be_bytes(
++          height
++            .as_ref()
++            .try_into()
++            .context("Invalid checkpoint height")?,
++        ),
++        hash: consensus::encode::deserialize::<Header>(&header)?.block_hash(),
++      })
++    })
++    .transpose()
++}
++
++fn restored_tip(path: &Path) -> Result<Option<Tip>> {
++  let options = Options::default();
++  let families = DB::list_cf(&options, path)?;
++  let db = DB::open_cf_for_read_only(&options, path, families, false)?;
++  tip(&db)
++}
++
++pub(super) fn remember_new_backup(path: &Path, engine: &BackupEngine, db: &DB) -> Result {
++  let id = engine
++    .get_backup_info()
++    .into_iter()
++    .map(|info| info.backup_id)
++    .max()
++    .ok_or_else(|| anyhow!("New checkpoint is missing from backup engine"))?;
++  let mut hints = read_hints(path)?;
++  hints.insert(
++    id,
++    Hint {
++      manifest_hash: manifest_hash(path, id)?,
++      tip: tip(db)?,
++    },
++  );
++  write_hints(path, &hints)
++}
++
++pub(super) fn prune_hints(path: &Path, engine: &BackupEngine) -> Result {
++  let ids: HashSet<_> = engine
++    .get_backup_info()
++    .into_iter()
++    .map(|info| info.backup_id)
++    .collect();
++  let mut hints = read_hints(path)?;
++  hints.retain(|id, _| ids.contains(id));
++  write_hints(path, &hints)
++}
++
++fn directory_exists(path: &Path) -> Result<bool> {
++  match fs::symlink_metadata(path) {
++    Ok(metadata) => {
++      ensure!(
++        metadata.file_type().is_dir(),
++        "Expected a directory at {}",
++        path.display()
++      );
++      Ok(true)
++    }
++    Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(false),
++    Err(err) => Err(err.into()),
++  }
++}
++
++fn remove_directory(path: &Path) -> Result {
++  if directory_exists(path)? {
++    fs::remove_dir_all(path)?;
++  }
++  Ok(())
++}
++
++fn lock(path: &Path) -> Result<DB> {
++  fs::create_dir_all(path)?;
++  let mut options = Options::default();
++  options.create_if_missing(true);
++  // RocksDB's OS lock is released on process exit. Hold it through both normal
++  // indexing and recovery so startup cleanup cannot race a live directory swap.
++  DB::open(&options, path.join("reorg.lock"))
++    .context("Could not acquire Ord recovery lock; another process may be using this index")
++}
++
++pub(super) fn prepare_index(path: &Path) -> Result<DB> {
++  let guard = lock(path)?;
++  finish_interrupted_restore(path)?;
++  Ok(guard)
++}
++
++fn finish_interrupted_restore(path: &Path) -> Result {
++  let current = path.join("index.db");
++  let previous = path.join(PREVIOUS);
++  if directory_exists(&previous)? {
++    if !directory_exists(&current)? {
++      // The process stopped between renaming the old index and installing the new one.
++      fs::rename(&previous, &current)?;
++      File::open(path)?.sync_all()?;
++    } else {
++      remove_directory(&previous)?;
++    }
++  }
++  remove_directory(&path.join(STAGING))
++}
++
++fn canonical(
++  tip: &Option<Tip>,
++  hash_at: &mut impl FnMut(u32) -> Result<Option<BlockHash>>,
++) -> Result<bool> {
++  match tip {
++    Some(tip) => Ok(
++      hash_at(tip.height).context("Could not validate checkpoint against Bitcoin Core")?
++        == Some(tip.hash),
++    ),
++    None => Ok(false),
++  }
++}
++
++pub(super) fn restore(
++  path: &Path,
++  mut hash_at: impl FnMut(u32) -> Result<Option<BlockHash>>,
++) -> Result {
++  let _recovery_lock = prepare_index(path)?;
++  let mut engine = BackupEngine::open(
++    &BackupEngineOptions::new(path.join("backup"))?,
++    &rocksdb::Env::new()?,
++  )?;
++  let mut backups = engine.get_backup_info();
++  backups.sort_by_key(|info| std::cmp::Reverse(info.backup_id));
++  let mut hints = read_hints(path)?;
++  let staging = path.join(STAGING);
++
++  for backup in backups {
++    let id = backup.backup_id;
++    let fingerprint = manifest_hash(path, id)?;
++    if let Some(hint) = hints
++      .get(&id)
++      .filter(|hint| hint.manifest_hash == fingerprint)
++    {
++      // A hint can reject a candidate cheaply, but can never authorize promotion.
++      // Recheck Core every time: a previously orphaned branch may become active again.
++      if !canonical(&hint.tip, &mut hash_at)? {
++        println!("skipping backup {id}: checkpoint is not on Bitcoin Core's active chain");
++        continue;
++      }
++    }
++
++    println!("checking backup with id {id}");
++    remove_directory(&staging)?;
++    engine.restore_from_backup(
++      &staging,
++      &staging,
++      &rocksdb::backup::RestoreOptions::default(),
++      id,
++    )?;
++    let actual_tip = restored_tip(&staging)?;
++    hints.insert(
++      id,
++      Hint {
++        manifest_hash: fingerprint,
++        tip: actual_tip.clone(),
++      },
++    );
++    // Persist the probe before RPC validation so even an interrupted attempt need not
++    // restore this checkpoint again just to discover its height/hash.
++    write_hints(path, &hints)?;
++    if !canonical(&actual_tip, &mut hash_at)? {
++      remove_directory(&staging)?;
++      continue;
++    }
++
++    let current = path.join("index.db");
++    let previous = path.join(PREVIOUS);
++    ensure!(directory_exists(&current)?, "Current Ord index is missing");
++    fs::rename(&current, &previous)?;
++    File::open(path)?.sync_all()?;
++    if let Err(err) = fs::rename(&staging, &current) {
++      fs::rename(&previous, &current)?;
++      return Err(err.into());
++    }
++    File::open(path)?.sync_all()?;
++    remove_directory(&previous)?;
++    println!("successfully rolled back database using canonical backup {id}");
++    return Ok(());
++  }
++
++  bail!("No valid Ord backup matches Bitcoin Core's active chain; current index and backups were preserved")
++}
++
++#[cfg(test)]
++mod tests {
++  use super::*;
++
++  fn headers(branch: u32, count: u32) -> Vec<Header> {
++    let genesis = bitcoin::blockdata::constants::genesis_block(Network::Regtest).header;
++    let mut result = vec![genesis];
++    for height in 1..count {
++      let mut header = genesis;
++      header.prev_blockhash = result.last().unwrap().block_hash();
++      header.time += height;
++      header.nonce = branch * 1000 + height;
++      result.push(header);
++    }
++    result
++  }
++
++  fn database(path: &Path) -> DB {
++    let mut options = Options::default();
++    options.create_if_missing(true);
++    options.create_missing_column_families(true);
++    DB::open_cf(
++      &options,
++      path,
++      [
++        "height_to_block_header",
++        "statistic_to_count",
++        "outpoint_to_utxo_entry",
++      ],
++    )
++    .unwrap()
++  }
++
++  fn write_chain(db: &DB, headers: &[Header]) {
++    let cf = db.cf_handle("height_to_block_header").unwrap();
++    let mut options = rocksdb::WriteOptions::default();
++    options.disable_wal(true);
++    for (height, header) in headers.iter().enumerate() {
++      db.put_cf_opt(
++        cf,
++        u32::try_from(height).unwrap().to_be_bytes(),
++        header.store(),
++        &options,
++      )
++      .unwrap();
++    }
++    // A legacy checkpoint can contain a stale statistic unrelated to its actual tip.
++    db.put_cf_opt(
++      db.cf_handle("statistic_to_count").unwrap(),
++      Statistic::LastSavepointHeight.key().to_be_bytes(),
++      1u32.to_be_bytes(),
++      &options,
++    )
++    .unwrap();
++    db.put_cf_opt(
++      db.cf_handle("outpoint_to_utxo_entry").unwrap(),
++      b"fixture-utxo",
++      headers.last().unwrap().block_hash().to_byte_array(),
++      &options,
++    )
++    .unwrap();
++  }
++
++  fn engine(path: &Path) -> BackupEngine {
++    BackupEngine::open(
++      &BackupEngineOptions::new(path.join("backup")).unwrap(),
++      &rocksdb::Env::new().unwrap(),
++    )
++    .unwrap()
++  }
++
++  fn fixture(chain: &[Header]) -> tempfile::TempDir {
++    let directory = tempfile::tempdir().unwrap();
++    let db = database(&directory.path().join("index.db"));
++    write_chain(&db, chain);
++    engine(directory.path())
++      .create_new_backup_flush(&db, true)
++      .unwrap();
++    directory
++  }
++
++  fn hash_at(chain: &[Header], height: u32) -> Result<Option<BlockHash>> {
++    Ok(
++      chain
++        .get(usize::try_from(height).unwrap())
++        .map(Header::block_hash),
++    )
++  }
++
++  fn current_tip(path: &Path) -> Tip {
++    restored_tip(&path.join("index.db")).unwrap().unwrap()
++  }
++
++  fn current_payload(path: &Path) -> Vec<u8> {
++    let db = database(&path.join("index.db"));
++    db.get_cf(
++      db.cf_handle("outpoint_to_utxo_entry").unwrap(),
++      b"fixture-utxo",
++    )
++    .unwrap()
++    .unwrap()
++  }
++
++  #[test]
++  fn stale_old_checkpoint_does_not_hide_newer_canonical_checkpoint() {
++    let core = mockcore::builder().network(Network::Regtest).build();
++    let client = Client::new(&core.url(), bitcoincore_rpc::Auth::None).unwrap();
++    let genesis = client
++      .get_block_header(&client.get_block_hash(0).unwrap())
++      .unwrap();
++    let mut branch_a = vec![genesis];
++    branch_a.extend(core.mine_blocks(6).into_iter().map(|block| block.header));
++    let directory = fixture(&branch_a);
++    let path = directory.path();
++    for _ in 0..6 {
++      core.invalidate_tip();
++    }
++    let mut branch_b = vec![genesis];
++    branch_b.extend(core.mine_blocks(12).into_iter().map(|block| block.header));
++    {
++      let db = database(&path.join("index.db"));
++      write_chain(&db, &branch_b[..11]);
++      engine(path).create_new_backup_flush(&db, true).unwrap();
++      write_chain(&db, &branch_b);
++    }
++    // Both legacy backups have no sidecar. The valid checkpoint is beyond the
++    // mismatch at branch A's height 7, and its LastSavepointHeight still says 1.
++    Reorg::handle_reorg(path, &client, 7, 2).unwrap();
++    assert_eq!(
++      current_tip(path),
++      Tip {
++        height: 10,
++        hash: branch_b[10].block_hash()
++      }
++    );
++    assert_eq!(engine(path).get_backup_info().len(), 2);
++    assert_eq!(
++      current_payload(path),
++      branch_b[10].block_hash().to_byte_array()
++    );
++  }
++
++  #[test]
++  fn newest_orphan_falls_back_to_older_valid_checkpoint() {
++    let branch_a = headers(1, 7);
++    let branch_b = headers(2, 10);
++    let directory = fixture(&branch_b[..4]);
++    let path = directory.path();
++    {
++      let db = database(&path.join("index.db"));
++      write_chain(&db, &branch_a);
++      engine(path).create_new_backup_flush(&db, true).unwrap();
++      write_chain(&db, &branch_b);
++    }
++    restore(path, |height| hash_at(&branch_b, height)).unwrap();
++    assert_eq!(
++      current_tip(path),
++      Tip {
++        height: 3,
++        hash: branch_b[3].block_hash()
++      }
++    );
++    assert_eq!(engine(path).get_backup_info().len(), 2);
++    assert_eq!(
++      current_payload(path),
++      branch_b[3].block_hash().to_byte_array()
++    );
++  }
++
++  #[test]
++  fn all_orphans_preserve_active_index_and_are_skipped_after_restart() {
++    let branch_a = headers(1, 7);
++    let branch_b = headers(2, 10);
++    let directory = fixture(&branch_a);
++    let path = directory.path();
++    {
++      let db = database(&path.join("index.db"));
++      write_chain(&db, &branch_b);
++    }
++    let expected = current_tip(path);
++    let expected_payload = current_payload(path);
++    let error = restore(path, |height| hash_at(&branch_b, height)).unwrap_err();
++    assert!(error.to_string().contains("No valid Ord backup"));
++    assert_eq!(current_tip(path), expected);
++    assert_eq!(current_payload(path), expected_payload);
++    // A fresh engine/hints load models a process restart. A probe always writes
++    // its hint atomically, so unchanged inode identity proves no second probe.
++    #[cfg(unix)]
++    let hint_inode = {
++      use std::os::unix::fs::MetadataExt;
++      fs::metadata(path.join("backup").join(HINTS)).unwrap().ino()
++    };
++    let error = restore(path, |height| hash_at(&branch_b, height)).unwrap_err();
++    assert!(
++      error.to_string().contains("No valid Ord backup"),
++      "{error:#}"
++    );
++    assert_eq!(current_tip(path), expected);
++    assert_eq!(current_payload(path), expected_payload);
++    assert_eq!(engine(path).get_backup_info().len(), 1);
++    #[cfg(unix)]
++    {
++      use std::os::unix::fs::MetadataExt;
++      assert_eq!(
++        fs::metadata(path.join("backup").join(HINTS)).unwrap().ino(),
++        hint_inode
++      );
++    }
++  }
++
++  #[test]
++  fn rpc_failure_on_final_validation_leaves_active_index_and_backup_intact() {
++    let chain = headers(1, 7);
++    let directory = fixture(&chain[..4]);
++    let path = directory.path();
++    {
++      let db = database(&path.join("index.db"));
++      remember_new_backup(path, &engine(path), &db).unwrap();
++      write_chain(&db, &chain);
++    }
++    let expected = current_tip(path);
++    let expected_payload = current_payload(path);
++    let mut calls = 0;
++    let error = restore(path, |height| {
++      calls += 1;
++      if calls == 1 {
++        hash_at(&chain, height)
++      } else {
++        bail!("RPC unavailable")
++      }
++    })
++    .unwrap_err();
++    assert!(format!("{error:#}").contains("RPC unavailable"));
++    assert_eq!(current_tip(path), expected);
++    assert_eq!(current_payload(path), expected_payload);
++    assert_eq!(engine(path).get_backup_info().len(), 1);
++    restore(path, |height| hash_at(&chain, height)).unwrap();
++    assert_eq!(current_tip(path).height, 3);
++  }
++
++  #[test]
++  fn checkpoint_above_core_tip_or_previously_orphaned_can_become_eligible() {
++    let chain = headers(1, 7);
++    let other_chain = headers(2, 7);
++    let directory = fixture(&chain);
++    let path = directory.path();
++    assert!(restore(path, |_| Ok(None))
++      .unwrap_err()
++      .to_string()
++      .contains("No valid Ord backup"));
++    assert!(restore(path, |height| hash_at(&other_chain, height)).is_err());
++    assert_eq!(engine(path).get_backup_info().len(), 1);
++    restore(path, |height| hash_at(&chain, height)).unwrap();
++    assert_eq!(current_tip(path).hash, chain[6].block_hash());
++  }
++
++  #[test]
++  fn hint_cannot_authorize_an_orphaned_restore() {
++    let branch_a = headers(1, 7);
++    let branch_b = headers(2, 7);
++    let directory = fixture(&branch_a);
++    let path = directory.path();
++    let mut hints = Hints::new();
++    hints.insert(
++      1,
++      Hint {
++        manifest_hash: manifest_hash(path, 1).unwrap(),
++        tip: Some(Tip {
++          height: 6,
++          hash: branch_b[6].block_hash(),
++        }),
++      },
++    );
++    write_hints(path, &hints).unwrap();
++    let expected = current_tip(path);
++    assert!(restore(path, |height| hash_at(&branch_b, height)).is_err());
++    assert_eq!(current_tip(path), expected);
++    assert_eq!(
++      read_hints(path).unwrap()[&1].tip.as_ref().unwrap().hash,
++      branch_a[6].block_hash()
++    );
++  }
++
++  #[test]
++  fn malformed_and_stale_hints_are_replaced_by_actual_checkpoint_tip() {
++    let chain = headers(1, 7);
++    let directory = fixture(&chain);
++    let path = directory.path();
++    fs::write(path.join("backup").join(HINTS), b"invalid json").unwrap();
++    restore(path, |height| hash_at(&chain, height)).unwrap();
++    let mut hints = read_hints(path).unwrap();
++    hints.get_mut(&1).unwrap().manifest_hash = "stale".into();
++    hints.get_mut(&1).unwrap().tip = None;
++    write_hints(path, &hints).unwrap();
++    restore(path, |height| hash_at(&chain, height)).unwrap();
++    assert_eq!(
++      read_hints(path).unwrap()[&1].tip.as_ref().unwrap().height,
++      6
++    );
++  }
++
++  #[test]
++  fn new_checkpoint_flushes_wal_disabled_writes_and_records_actual_tip() {
++    let chain = headers(1, 7);
++    let directory = fixture(&chain[..3]);
++    let path = directory.path();
++    {
++      let db = database(&path.join("index.db"));
++      write_chain(&db, &chain);
++      let mut engine = engine(path);
++      engine.create_new_backup_flush(&db, true).unwrap();
++      remember_new_backup(path, &engine, &db).unwrap();
++      engine.purge_old_backups(1).unwrap();
++      prune_hints(path, &engine).unwrap();
++    }
++    let hints = read_hints(path).unwrap();
++    assert_eq!(hints.len(), 1);
++    assert_eq!(
++      hints[&2].tip,
++      Some(Tip {
++        height: 6,
++        hash: chain[6].block_hash()
++      })
++    );
++    restore(path, |height| hash_at(&chain, height)).unwrap();
++    assert_eq!(current_tip(path).height, 6);
++  }
++
++  #[test]
++  fn interrupted_swap_recovers_previous_index_before_empty_database_can_be_created() {
++    let chain = headers(1, 7);
++    let directory = fixture(&chain);
++    let path = directory.path();
++    fs::rename(path.join("index.db"), path.join(PREVIOUS)).unwrap();
++    fs::create_dir(path.join(STAGING)).unwrap();
++    fs::write(path.join(STAGING).join("incomplete"), b"partial restore").unwrap();
++    finish_interrupted_restore(path).unwrap();
++    assert_eq!(current_tip(path).height, 6);
++    assert!(!path.join(PREVIOUS).exists());
++    assert!(!path.join(STAGING).exists());
++  }
++
++  #[test]
++  fn interrupted_cleanup_keeps_promoted_index() {
++    let branch_a = headers(1, 7);
++    let branch_b = headers(2, 10);
++    let directory = fixture(&branch_a);
++    let path = directory.path();
++    fs::rename(path.join("index.db"), path.join(PREVIOUS)).unwrap();
++    {
++      let db = database(&path.join("index.db"));
++      write_chain(&db, &branch_b);
++    }
++    finish_interrupted_restore(path).unwrap();
++    assert_eq!(current_tip(path).hash, branch_b[9].block_hash());
++    assert!(!path.join(PREVIOUS).exists());
++  }
++
++  #[test]
++  fn another_process_cannot_clean_up_a_live_recovery() {
++    let chain = headers(1, 7);
++    let directory = fixture(&chain);
++    let path = directory.path();
++    let guard = lock(path).unwrap();
++    fs::create_dir(path.join(STAGING)).unwrap();
++    fs::write(path.join(STAGING).join("sentinel"), b"live restore").unwrap();
++    assert!(prepare_index(path).is_err());
++    assert_eq!(
++      fs::read(path.join(STAGING).join("sentinel")).unwrap(),
++      b"live restore"
++    );
++    drop(guard);
++    let _guard = prepare_index(path).unwrap();
++    assert!(!path.join(STAGING).exists());
++    assert_eq!(current_tip(path).height, 6);
++  }
++
++  #[cfg(unix)]
++  #[test]
++  fn unexpected_staging_symlink_fails_closed() {
++    let chain = headers(1, 7);
++    let directory = fixture(&chain);
++    let path = directory.path();
++    let unrelated = path.join("unrelated");
++    fs::create_dir(&unrelated).unwrap();
++    fs::write(unrelated.join("sentinel"), b"preserve").unwrap();
++    std::os::unix::fs::symlink(&unrelated, path.join(STAGING)).unwrap();
++    assert!(prepare_index(path).is_err());
++    assert_eq!(fs::read(unrelated.join("sentinel")).unwrap(), b"preserve");
++    assert_eq!(current_tip(path).height, 6);
++  }
++}
+diff --git a/ord/src/subcommand/index/update.rs b/ord/src/subcommand/index/update.rs
+index fb5e175..dbffb67 100644
+--- a/ord/src/subcommand/index/update.rs
++++ b/ord/src/subcommand/index/update.rs
+@@ -13,11 +13,12 @@ pub(crate) fn run(settings: Settings) -> SubcommandResult {
+         match err.downcast_ref() {
+           Some(&ReorgError::Recoverable { height, depth }) => {
+             let index_path = index.path.clone();
++            let client = settings.bitcoin_rpc_client(None)?;
+             drop(index); // Ensure the index and dbs are closed before handling the reorg
+-            Reorg::handle_reorg(&index_path, height, depth)?;
++            Reorg::handle_reorg(&index_path, &client, height, depth)?;
+           }
+           _ => {
+-            break;
++            return Err(err);
+           }
+         }
+       }

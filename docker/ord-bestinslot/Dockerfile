@@ -1,6 +1,6 @@
 # ---- builder ----
 ARG RUST_VERSION=1.85.0
-FROM rust:${RUST_VERSION}-bookworm AS builder
+FROM rust:${RUST_VERSION}-bookworm AS source
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -17,13 +17,22 @@ RUN apt-get update \
 WORKDIR /usr/src/OPI
 ARG REPO=https://github.com/bestinslot-xyz/OPI.git
 # v2.0.10
-ARG REF=bf44112
+ARG REF=bf441125d2649776d6fa9ed0985fd591a9e735c9
 
 RUN git clone --filter=blob:none --sparse "${REPO}" . \
  && (git fetch --depth=1 origin "${REF}" && git checkout --detach FETCH_HEAD || git checkout --detach "${REF}") \
  && git sparse-checkout set ord
 
+COPY patches /tmp/ord-patches
+RUN git apply --check /tmp/ord-patches/0001-validate-reorg-backups.patch \
+ && git apply /tmp/ord-patches/0001-validate-reorg-backups.patch
+
 WORKDIR /usr/src/OPI/ord
+
+FROM source AS recovery-tests
+RUN cargo test --locked --lib index::reorg::backups::tests
+
+FROM source AS builder
 RUN cargo build --locked --bin ord --release
 
 # ---- runtime ----
