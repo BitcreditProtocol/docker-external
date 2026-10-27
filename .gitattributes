@@ -1,0 +1,2 @@
+# Unified diff context lines may contain a single space; check the applied source too.
+docker/ord-bestinslot/patches/0001-validate-reorg-backups.patch whitespace=-blank-at-eol
