@@ -7,7 +7,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 ARG REPO=https://github.com/bestinslot-xyz/brc20-programmable-module.git
-ARG REF=v0.15.13
+ARG REF=v0.16.0
 
 RUN cargo install --locked \
       --git "${REPO}" \

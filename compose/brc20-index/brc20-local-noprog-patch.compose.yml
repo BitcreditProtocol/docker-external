@@ -19,12 +19,12 @@ services:
 
   brc20-index-bestinslot:
     container_name: brc20-index-bestinslot-local
-    image: brc20-index-bestinslot-noprog:${BRC20_INDEX_NOPROG_VERSION:-2.0.10-noprog}
+    image: brc20-index-bestinslot-noprog:${BRC20_INDEX_NOPROG_VERSION:-2.0.14-noprog}
     platform: linux/amd64
     build:
       context: ../../docker/brc20-index-bestinslot-noprog
       args:
-        REF: v${BRC20_INDEX_VERSION:-2.0.10}
+        REF: v${BRC20_INDEX_VERSION:-2.0.14}
     restart: "no"
     depends_on:
       brc20-db:
@@ -46,12 +46,12 @@ services:
 
   brc20-api-bestinslot:
     container_name: brc20-api-bestinslot-local
-    image: brc20-api-bestinslot:${BRC20_API_VERSION:-2.0.10}
+    image: brc20-api-bestinslot:${BRC20_API_VERSION:-2.0.14}
     platform: linux/amd64
     build:
       context: ../../docker/brc20-api-bestinslot
       args:
-        REF: v${BRC20_API_VERSION:-2.0.10}
+        REF: v${BRC20_API_VERSION:-2.0.14}
     restart: unless-stopped
     depends_on:
       brc20-db:

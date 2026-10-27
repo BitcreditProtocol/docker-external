@@ -13,4 +13,4 @@ diff --git a/modules/brc20_index/src/indexer/brc20_indexer.rs b/modules/brc20_in
 +            );
 +        }
  
-         self.reorg_to_last_synced_block_height().await?; // Ensure no residue before proceeding
+         // Wait for the servers to start

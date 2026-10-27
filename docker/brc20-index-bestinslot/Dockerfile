@@ -9,7 +9,7 @@ RUN apt-get update \
 WORKDIR /src
 ARG REPO=https://github.com/bestinslot-xyz/OPI.git
 
-ARG REF=v2.0.10
+ARG REF=v2.0.14
 
 RUN git clone "${REPO}" . \
  && git fetch origin "${REF}" \
