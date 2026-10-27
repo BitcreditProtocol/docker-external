@@ -19,12 +19,12 @@ services:
 
   brc20-prog:
     container_name: brc20-prog-local
-    image: brc20-prog-bestinslot:${BRC20_PROG_VERSION:-0.15.13}
+    image: brc20-prog-bestinslot:${BRC20_PROG_VERSION:-0.16.0}
     platform: linux/amd64
     build:
       context: ../../docker/brc20-prog-bestinslot
       args:
-        REF: ${BRC20_PROG_REF:-v0.15.13}
+        REF: ${BRC20_PROG_REF:-v0.16.0}
     restart: unless-stopped
     environment:
       BRC20_PROG_RPC_SERVER_URL: 0.0.0.0:18545
@@ -45,12 +45,12 @@ services:
 
   brc20-index-bestinslot:
     container_name: brc20-index-bestinslot-local
-    image: brc20-index-bestinslot:${BRC20_INDEX_VERSION:-2.0.10}
+    image: brc20-index-bestinslot:${BRC20_INDEX_VERSION:-2.0.14}
     platform: linux/amd64
     build:
       context: ../../docker/brc20-index-bestinslot
       args:
-        REF: v${BRC20_INDEX_VERSION:-2.0.10}
+        REF: v${BRC20_INDEX_VERSION:-2.0.14}
     restart: "no"
     depends_on:
       brc20-db:
@@ -86,12 +86,12 @@ services:
 
   brc20-api-bestinslot:
     container_name: brc20-api-bestinslot-local
-    image: brc20-api-bestinslot:${BRC20_API_VERSION:-2.0.10}
+    image: brc20-api-bestinslot:${BRC20_API_VERSION:-2.0.14}
     platform: linux/amd64
     build:
       context: ../../docker/brc20-api-bestinslot
       args:
-        REF: v${BRC20_API_VERSION:-2.0.10}
+        REF: v${BRC20_API_VERSION:-2.0.14}
     restart: unless-stopped
     depends_on:
       brc20-db:
