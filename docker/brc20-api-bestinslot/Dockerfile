@@ -7,7 +7,7 @@ RUN apt-get update \
 
 WORKDIR /src
 ARG REPO=https://github.com/bestinslot-xyz/OPI.git
-ARG REF=v2.0.10
+ARG REF=v2.0.14
 
 RUN git clone --filter=blob:none --sparse "${REPO}" . \
  && (git fetch --depth=1 origin "${REF}" && git checkout --detach FETCH_HEAD || git checkout --detach "${REF}") \

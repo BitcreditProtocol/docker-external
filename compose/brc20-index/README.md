@@ -1,5 +1,23 @@
 # BRC20 index stack
 
+## Image versions
+
+The indexer, API, and no-prog indexer images use the stable OPI `v2.0.14` release.
+The full-prog examples pair it with `brc20-prog` `v0.16.0`: OPI now requires
+`~0.16.0` and rejects the previous `v0.15.13` server at startup. Upgrade those
+images together.
+
+OPI `v2.0.14` includes the unused-transfer table rebuild optimization from
+`v2.0.13` and skips external event-provider discovery in full mode when
+`REPORT_TO_INDEXER=false`. The API source is unchanged from `v2.0.10`; its image
+tag follows the OPI release used to build the stack.
+
+The `ord-bestinslot` image remains at `0.1.0` (OPI commit `bf44112`). Its `ord/`
+source tree is identical in OPI `v2.0.14`. This update does not change Ord's
+backup selection or recovery logic and does not fix repeated reorg rollback
+loops. Recovering a stalled instance still requires a verified checkpoint or
+rebuild.
+
 ## Production
 
 Full production example including Bitcoin Core, ord, BRC20 DB, indexer, prog, and API:
