@@ -1,0 +1,37 @@
+name: ord-recovery
+
+on:
+  pull_request:
+    paths:
+      - 'docker/ord-bestinslot/**'
+      - '.github/workflows/ord-recovery.yml'
+  push:
+    branches: [ master ]
+    paths:
+      - 'docker/ord-bestinslot/**'
+      - '.github/workflows/ord-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ord-recovery-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recovery-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Test patched Ord recovery with real RocksDB backups
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ./docker/ord-bestinslot
+          target: recovery-tests
+          push: false
+          platforms: linux/amd64
+          cache-from: type=gha,scope=ord-recovery-tests
+          cache-to: type=gha,mode=max,scope=ord-recovery-tests
